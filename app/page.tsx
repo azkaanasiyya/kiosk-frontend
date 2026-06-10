@@ -1,65 +1,219 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React from "react";
+import { useAppFlow } from "./useAppFlow";
+
+import StartPage            from "../components/StartPage";
+import ServiceTypePage      from "../components/ServiceTypePage";
+import MemberPage           from "./screens/MemberPage";
+import MenuPage             from "./screens/MenuPage";
+import ProductDetailPage    from "./screens/ProductDetailPage";
+import SuccessScreen        from "./screens/SuccessScreen";
+import RecommendationPage   from "./screens/RecommendationPage";
+import CartPage             from "./screens/CartPage";
+import PaymentMethodPage    from "./screens/PaymentMethodPage";
+import PickTableNumberPage  from "./screens/PickTableNumberPage";
+import InputTableNumberPage from "./screens/InputTableNumberPage";
+import QRISPage             from "./screens/QrisPage";
+import ReceiptPage          from "./screens/ReceiptPage";
+
+export default function Page() {
+  const flow = useAppFlow();
+
+  // ── Overlay loading & error ──────────────────────────────────────────────
+  const submittingOverlay = flow.isSubmitting && (
+    <div className="fixed inset-0 z-50 bg-white/80 flex flex-col items-center justify-center gap-4">
+      <div className="w-10 h-10 border-4 border-[#C84C34] border-t-transparent rounded-full animate-spin" />
+      <p className="text-sm font-black text-gray-700 animate-pulse">Memproses pesanan...</p>
+    </div>
+  );
+
+  const errorOverlay = flow.orderError && !flow.isSubmitting && (
+    <div className="fixed inset-0 z-50 bg-white/90 flex flex-col items-center justify-center gap-4 px-8">
+      <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+        <span className="text-2xl">✗</span>
+      </div>
+      <p className="text-base font-black text-gray-900 text-center">Gagal membuat pesanan</p>
+      <p className="text-sm text-gray-500 text-center">{flow.orderError}</p>
+      <button
+        onClick={() => flow.goBackToCart()}
+        className="px-8 py-3 bg-[#C84C34] text-white rounded-xl text-sm font-black"
+      >
+        Kembali ke Keranjang
+      </button>
+    </div>
+  );
+
+  // ── MenuPage selalu di-render, hanya disembunyikan saat screen lain aktif ──
+  // Ini mencegah unmount/remount sehingga activeCatId dan data menu tetap terjaga
+  const menuScreens = ["menu", "detail", "success"];
+  const showMenu = menuScreens.includes(flow.screen);
+
+  const menuPage = (
+    <div className={showMenu ? "block" : "hidden"}>
+      <MenuPage
+        cart={flow.cart}
+        onSelectProduct={(p) => flow.goToDetail(p, "menu")}
+        onViewCart={flow.goToRecommendation}
+        onResetAll={flow.resetAll}
+        onFavoritesLoaded={flow.setFavorites}
+        savedCatId={flow.savedCatId}
+        onCatChange={flow.setSavedCatId}
+        menuLoaded={flow.menuLoaded}
+        onMenuLoaded={() => flow.setMenuLoaded(true)}
+      />
+    </div>
+  );
+
+  // ── Screen-screen yang ditampilkan DI ATAS MenuPage ───────────────────────
+  // MenuPage tetap render di background, screen lain overlay di atasnya
+
+  if (flow.screen === "start") {
+    return <StartPage onStart={flow.goToServiceType} />;
+  }
+
+  if (flow.screen === "service-type") {
+    return (
+      <ServiceTypePage
+        onDineIn={() => flow.chooseServiceType("dine-in")}
+        onTakeAway={() => flow.chooseServiceType("take-away")}
+      />
+    );
+  }
+
+  if (flow.screen === "member") {
+    return (
+      <MemberPage
+        onContinue={flow.setMemberAndContinue}
+        onSkip={() => flow.setMemberAndContinue({ type: "guest" })}
+        onResetAll={flow.resetAll}
+      />
+    );
+  }
+
+  // ── Screens yang render bersama MenuPage (overlay) ────────────────────────
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="relative w-screen h-screen overflow-hidden">
+
+      {/* MenuPage selalu ada di background */}
+      {menuPage}
+
+      {/* Detail produk — overlay penuh di atas menu */}
+      {flow.screen === "detail" && flow.selectedProduct && (
+        <div className="absolute inset-0 z-10">
+          <ProductDetailPage
+            product={flow.selectedProduct}
+            onBack={flow.goBackFromDetail}
+            onAddToCart={flow.addToCart}
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      )}
+
+      {/* Success screen — overlay sebentar lalu kembali ke menu */}
+      {flow.screen === "success" && (
+        <div className="absolute inset-0 z-20">
+          <SuccessScreen
+            totalPrice={flow.successTotal}
+            onDone={flow.onSuccessDone}
+          />
         </div>
-      </main>
+      )}
+
+      {/* Recommendation — sebelum ke keranjang */}
+      {flow.screen === "recommendation" && (
+        <div className="absolute inset-0 z-30">
+          <RecommendationPage
+            favorites={flow.favorites}
+            onSelectProduct={(p) => flow.goToDetail(p, "recommendation")}
+            onSkip={flow.goToCart}
+          />
+        </div>
+      )}
+
+      {/* Cart */}
+      {flow.screen === "cart" && (
+        <div className="absolute inset-0 z-30">
+          <CartPage
+            cart={flow.cart}
+            onUpdateQty={flow.updateCartQty}
+            onRemove={flow.removeFromCart}
+            onAddMore={flow.goBackToMenu}
+            onCheckout={flow.goToPayment}
+            onResetAll={flow.resetAll}
+          />
+        </div>
+      )}
+
+      {/* Payment */}
+      {flow.screen === "payment" && (
+        <div className="absolute inset-0 z-30">
+          {submittingOverlay}
+          {errorOverlay}
+          <PaymentMethodPage
+            onPayHere={() => flow.choosePaymentMethod("qris")}
+            onPayAtCashier={() => flow.choosePaymentMethod("cashier")}
+            onBack={flow.goBackToCart}
+            onResetAll={flow.resetAll}
+          />
+        </div>
+      )}
+
+      {/* Pick table */}
+      {flow.screen === "pick-table" && (
+        <div className="absolute inset-0 z-30">
+          {submittingOverlay}
+          {errorOverlay}
+          <PickTableNumberPage
+            onContinue={flow.goToInputTable}
+            onResetAll={flow.resetAll}
+          />
+        </div>
+      )}
+
+      {/* Input table */}
+      {flow.screen === "input-table" && (
+        <div className="absolute inset-0 z-30">
+          {submittingOverlay}
+          {errorOverlay}
+          <InputTableNumberPage
+            onConfirm={flow.confirmTableNumber}
+          />
+        </div>
+      )}
+
+      {/* QRIS */}
+      {flow.screen === "qris" && (
+        <div className="absolute inset-0 z-30">
+          <QRISPage
+            cart={flow.cart}
+            tableNumber={flow.tableNumber}
+            orderNumber={flow.orderNumber}
+            orderId={flow.orderId}
+            onPaymentSuccess={flow.onQRISPaid}
+            onResetAll={flow.resetAll}
+          />
+        </div>
+      )}
+
+      {/* Receipt */}
+      {(flow.screen === "receipt-paid" || flow.screen === "receipt-pending") && (
+        <div className="absolute inset-0 z-30">
+          <ReceiptPage
+            cart={flow.cart}
+            tableNumber={flow.tableNumber}
+            orderNumber={flow.orderNumber}
+            orderId={flow.orderId}
+            status={flow.screen === "receipt-paid" ? "paid" : "pending"}
+            member={flow.member}
+            totalPoints={flow.totalPoints}
+            kioskConfig={flow.kioskConfig}
+            onPrint={() => window.print()}
+            onDone={flow.resetAll}
+            onResetAll={flow.resetAll}
+          />
+        </div>
+      )}
+
     </div>
   );
 }
