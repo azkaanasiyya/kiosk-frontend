@@ -1,14 +1,288 @@
 "use client";
 
-import React from "react";
-import Image from "next/image";
-import { RotateCcw, Accessibility, BadgeCheck, Printer } from "lucide-react";
+import React, { useRef, useEffect, useState } from "react";
+import { RotateCcw, Accessibility, Printer } from "lucide-react";
 import { CartItem, MemberInfo, formatRp } from "./types";
 import { useLanguage } from "@/context/LanguageContext";
 import type { ApiConfig } from "@/lib/api";
 
 type ReceiptStatus = "paid" | "pending";
 
+// ─── HELPER ──────────────────────────────────────────────────────────────────
+function formatDate(date: Date): string {
+  const d  = date.getDate().toString().padStart(2, "0");
+  const m  = (date.getMonth() + 1).toString().padStart(2, "0");
+  const y  = date.getFullYear();
+  const hh = date.getHours().toString().padStart(2, "0");
+  const mm = date.getMinutes().toString().padStart(2, "0");
+  return `${d}-${m}-${y} ${hh}:${mm}`;
+}
+
+// Hitung amount dari type + value
+function calcAmount(subtotal: number, type: string, value: number): number {
+  if (type === "percentage") return Math.round(subtotal * (value / 100));
+  return value; // nominal
+}
+
+// Format persen: 11.00 → "11%", 3.00 → "3%"
+function formatPct(value: number): string {
+  const v = parseFloat(value.toString());
+  return `${v % 1 === 0 ? v.toFixed(0) : v}%`;
+}
+
+// Generate kode kasir 5 digit
+function generateCashierCode(): string {
+  return Math.floor(10000 + Math.random() * 90000).toString();
+}
+
+// ─── KOMPONEN ISI STRUK ───────────────────────────────────────────────────────
+// Dipisah agar bisa dipakai untuk preview & print
+function ReceiptContent({
+  cart,
+  tableNumber,
+  orderNumber,
+  orderId,
+  status,
+  member,
+  totalPoints,
+  kioskConfig,
+  paymentMethod,
+  cashierCode,
+}: {
+  cart: CartItem[];
+  tableNumber: string | null;
+  orderNumber: string;
+  orderId: number | null;
+  status: ReceiptStatus;
+  member: MemberInfo;
+  totalPoints: number;
+  kioskConfig: ApiConfig | null;
+  paymentMethod: string;
+  cashierCode: string;
+}) {
+  const isPaid      = status === "paid";
+  const isTakeaway  = !tableNumber;
+  const subTotal    = cart.reduce((s, item) => s + item.totalPrice, 0);
+  const now         = formatDate(new Date());
+
+  // Tax — selalu tampil jika ada
+  const tax         = kioskConfig?.tax ?? null;
+  const taxAmount   = tax ? calcAmount(subTotal, tax.type, tax.value) : 0;
+
+  // Service charge — HANYA untuk takeaway
+  const sc          = (isTakeaway && kioskConfig?.service_charge) ? kioskConfig.service_charge : null;
+  const scAmount    = sc ? calcAmount(subTotal, sc.type, sc.value) : 0;
+
+  const totalFinal  = subTotal + taxAmount + scAmount;
+
+  const SEP = "--------------------------------";
+
+  return (
+    <div
+      id="receipt-content"
+      style={{
+        fontFamily: "'Courier New', Courier, monospace",
+        fontSize: "12px",
+        color: "#000",
+        lineHeight: "1.4",
+        width: "100%",
+        maxWidth: "300px",
+        margin: "0 auto",
+        padding: "12px 10px",
+        backgroundColor: "#fff",
+      }}
+    >
+      {/* ── HEADER ─────────────────────────────────────────────────────── */}
+      <div style={{ textAlign: "center", marginBottom: "6px" }}>
+        {/* Logo — ganti src dengan path logo aslimu */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/assets/jaya_text.png"
+          alt="Logo"
+          style={{ width: "100px", marginBottom: "6px", display: "block", margin: "0 auto 6px" }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+        <div style={{ fontWeight: "bold", fontSize: "13px" }}>Toko Kopi Jaya</div>
+        <div style={{ fontSize: "10px" }}>Jl. Pajajaran No.25D, Klojen, Malang</div>
+        <div style={{ fontSize: "10px" }}>Telp: +62 811-3333-2323</div>
+      </div>
+
+      <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+
+      {/* ── INFO ORDER ─────────────────────────────────────────────────── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+        <tbody>
+          <tr>
+            <td style={{ width: "36%", paddingBottom: "1px" }}>Nota</td>
+            <td style={{ width: "4%"  }}>:</td>
+            <td>#{orderId ?? orderNumber}</td>
+          </tr>
+          <tr>
+            <td style={{ paddingBottom: "1px" }}>Tanggal</td>
+            <td>:</td>
+            <td>{now}</td>
+          </tr>
+          <tr>
+            <td style={{ paddingBottom: "1px" }}>Kasir</td>
+            <td>:</td>
+            <td>Kiosk</td>
+          </tr>
+          {member.type === "member" && (
+            <tr>
+              <td style={{ paddingBottom: "1px" }}>Pelanggan</td>
+              <td>:</td>
+              <td>{member.name}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+
+      {/* ── DAFTAR ITEM ────────────────────────────────────────────────── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+        <tbody>
+          {cart.map((item) => {
+            const modifierSummary = (item.modifiers ?? []).map((m) => m.name).join(", ");
+            const addonSummary    = item.addons.filter((x) => x.qty > 0).map((x) => `${x.qty}x ${x.addon.name}`).join(", ");
+            const summary         = [modifierSummary, addonSummary].filter(Boolean).join(", ");
+            const unitPrice       = Math.round(item.totalPrice / item.qty);
+
+            return (
+              <React.Fragment key={item.cartId}>
+                <tr>
+                  <td colSpan={3} style={{ fontWeight: "bold", paddingTop: "3px" }}>
+                    {item.product.name}
+                  </td>
+                </tr>
+                {summary && (
+                  <tr>
+                    <td colSpan={3} style={{ fontSize: "10px", paddingBottom: "1px" }}>
+                      &nbsp;&nbsp;{summary}
+                    </td>
+                  </tr>
+                )}
+                <tr>
+                  <td style={{ width: "14%", paddingBottom: "2px" }}>{item.qty}x</td>
+                  <td style={{ width: "46%" }}>
+                    Rp {unitPrice.toLocaleString("id-ID")}
+                  </td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    Rp {item.totalPrice.toLocaleString("id-ID")}
+                  </td>
+                </tr>
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+
+      {/* ── BREAKDOWN HARGA ────────────────────────────────────────────── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+        <tbody>
+          <tr>
+            <td style={{ paddingBottom: "2px" }}>Subtotal</td>
+            <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+              Rp {subTotal.toLocaleString("id-ID")}
+            </td>
+          </tr>
+
+          {scAmount > 0 && sc && (
+            <tr>
+              <td style={{ paddingBottom: "2px" }}>
+                {sc.name}{" "}
+                <span style={{ fontSize: "10px" }}>({formatPct(sc.value)})</span>
+              </td>
+              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                Rp {scAmount.toLocaleString("id-ID")}
+              </td>
+            </tr>
+          )}
+
+          {taxAmount > 0 && tax && (
+            <tr>
+              <td style={{ paddingBottom: "2px" }}>
+                {tax.name}{" "}
+                <span style={{ fontSize: "10px" }}>({formatPct(tax.value)})</span>
+              </td>
+              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                Rp {taxAmount.toLocaleString("id-ID")}
+              </td>
+            </tr>
+          )}
+
+          <tr>
+            <td colSpan={2} style={{ padding: "2px 0" }}>
+              <div style={{ borderTop: "1px solid #000" }} />
+            </td>
+          </tr>
+
+          <tr>
+            <td style={{ fontWeight: "bold", fontSize: "14px", paddingTop: "2px" }}>Total</td>
+            <td style={{ fontWeight: "bold", fontSize: "14px", textAlign: "right", whiteSpace: "nowrap", paddingTop: "2px" }}>
+              Rp {totalFinal.toLocaleString("id-ID")}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+
+      {/* ── FOOTER STRUK ───────────────────────────────────────────────── */}
+      <div style={{ textAlign: "center", fontSize: "11px" }}>
+        <div>Pembayaran: {paymentMethod.toUpperCase()}</div>
+        {isPaid ? (
+          <div style={{ fontWeight: "bold", fontSize: "13px", marginTop: "3px" }}>
+            LUNAS
+          </div>
+        ) : (
+          <>
+            <div style={{ fontWeight: "bold", fontSize: "12px", marginTop: "3px" }}>
+              BELUM LUNAS — Bayar di Kasir
+            </div>
+            <div style={{ marginTop: "6px", fontSize: "11px" }}>
+              Tunjukkan kode ini ke kasir:
+            </div>
+            <div style={{
+              fontWeight: "bold",
+              fontSize: "24px",
+              letterSpacing: "6px",
+              marginTop: "4px",
+              border: "2px solid #000",
+              display: "inline-block",
+              padding: "4px 12px",
+            }}>
+              {cashierCode}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Poin member */}
+      {member.type === "member" && totalPoints > 0 && (
+        <>
+          <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+          <div style={{ textAlign: "center", fontSize: "10px" }}>
+            <div>Halo, {member.name}!</div>
+            <div style={{ fontWeight: "bold" }}>+{totalPoints} poin ditambahkan</div>
+            <div>Cek poin di aplikasi Kopi Jaya</div>
+          </div>
+        </>
+      )}
+
+      <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
+
+      <div style={{ textAlign: "center", fontSize: "11px" }}>
+        <div>Terima Kasih</div>
+        <div>Atas Kunjungan Anda</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── HALAMAN UTAMA ────────────────────────────────────────────────────────────
 export default function ReceiptPage({
   cart,
   tableNumber,
@@ -18,7 +292,7 @@ export default function ReceiptPage({
   member,
   totalPoints,
   kioskConfig,
-  onPrint,
+  paymentMethod,
   onDone,
   onResetAll,
 }: {
@@ -30,233 +304,145 @@ export default function ReceiptPage({
   member: MemberInfo;
   totalPoints: number;
   kioskConfig: ApiConfig | null;
-  onPrint: () => void;
+  paymentMethod: "qris" | "cashier" | null;
   onDone: () => void;
   onResetAll: () => void;
 }) {
   const { t } = useLanguage();
-  const isPaid = status === "paid";
+  const [cashierCode] = useState(() => generateCashierCode());
 
-  // ─── KALKULASI HARGA ───────────────────────────────────────────────────────
-  const subTotal     = cart.reduce((s, item) => s + item.totalPrice, 0);
-  const taxRate      = kioskConfig?.tax?.rate ?? 0;
-  const serviceRate  = kioskConfig?.service_charge?.rate ?? 0;
-  const taxAmount    = Math.round(subTotal * taxRate);
-  const serviceAmount= Math.round(subTotal * serviceRate);
-  const totalFinal   = subTotal + taxAmount + serviceAmount;
+  // Terjemahkan paymentMethod ke label yang ditampilkan di struk
+  const paymentLabel = paymentMethod === "qris" ? "QRIS"
+    : paymentMethod === "cashier" ? "Tunai"
+    : "Kiosk";
 
-  const hasTax       = taxAmount > 0;
-  const hasService   = serviceAmount > 0;
+  // ─── PRINT ───────────────────────────────────────────────────────────────
+  const handlePrint = () => {
+    const element = document.getElementById("receipt-content");
+    if (!element) return;
 
-  const logoSrc  = "/kopjay-logo.png";
-  const storeName = "Kopi Jaya";
+    const printWindow = window.open("", "_blank", "width=380,height=600");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Struk #${orderId ?? orderNumber}</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { background: #fff; }
+            @media print {
+              @page { margin: 4mm; size: 80mm auto; }
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${element.outerHTML}
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() { window.close(); };
+            };
+          <\/script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   return (
-    <div className="w-screen h-screen bg-white overflow-hidden flex flex-col font-sans">
+    <>
+      {/* CSS khusus print — sembunyikan UI kiosk, hanya tampilkan struk */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #receipt-content, #receipt-content * { visibility: visible !important; }
+          #receipt-content {
+            position: fixed !important;
+            top: 0; left: 0;
+            width: 80mm !important;
+            margin: 0 !important;
+            padding: 4mm !important;
+          }
+        }
+      `}</style>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-8 pb-4">
+      <div className="w-screen h-screen bg-gray-50 overflow-hidden flex flex-col font-sans">
 
-        {/* Logo */}
-        <div className="flex justify-center mb-4">
-          <div className="w-12 h-12 relative">
-            <Image src={logoSrc} alt={storeName} fill className="object-contain" />
-          </div>
-        </div>
+        {/* ── KONTEN SCROLL ──────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto no-scrollbar py-4 px-4">
 
-        {/* Judul */}
-        <h1 className="text-2xl font-black text-gray-900 text-center leading-snug mb-6 whitespace-pre-line">
-          {isPaid ? t.receipt.titlePaid : t.receipt.titlePending}
-        </h1>
+          {/* Judul halaman */}
+          <h1 className="text-lg font-black text-gray-900 text-center mb-4 leading-snug">
+            {status === "paid" ? t.receipt.titlePaid : t.receipt.titlePending}
+          </h1>
 
-        {/* ── KARTU STRUK ────────────────────────────────────────────────── */}
-        <div className="border border-gray-100 rounded-2xl shadow-sm overflow-hidden mb-4">
-
-          {/* Header status */}
-          <div className="flex flex-col items-center py-5 border-b border-dashed border-gray-200 gap-2">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isPaid ? "bg-[#C84C34]" : "bg-yellow-400"}`}>
-              <BadgeCheck size={22} className="text-white" />
+          {/* Kode kasir — hanya tampil jika belum lunas */}
+          {status === "pending" && (
+            <div className="mx-auto mb-4 bg-yellow-50 border-2 border-yellow-300 rounded-2xl px-4 py-4 text-center" style={{ maxWidth: "300px" }}>
+              <p className="text-xs font-bold text-yellow-700 mb-1">Tunjukkan kode ini ke kasir</p>
+              <p className="text-4xl font-black tracking-widest text-gray-900">{cashierCode}</p>
+              <p className="text-[10px] text-gray-400 mt-1">Kasir akan memproses pembayaranmu</p>
             </div>
-            <p className="text-sm font-black text-gray-900">{t.receipt.yourOrder}</p>
-            {!isPaid && (
-              <span className="text-[10px] font-black text-yellow-600 bg-yellow-50 border border-yellow-200 px-3 py-1 rounded-full">
-                {t.receipt.pendingBadge}
-              </span>
-            )}
-          </div>
+          )}
 
-          {/* Info order */}
-          <div className="px-5 py-4 flex flex-col gap-1 border-b border-dashed border-gray-200">
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">{t.receipt.orderNo}</span>
-              <span className="font-black text-gray-900">#{orderNumber}</span>
-            </div>
-            {orderId && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Ref ID</span>
-                <span className="font-bold text-gray-500">{orderId}</span>
-              </div>
-            )}
-            {tableNumber && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">{t.receipt.tableNo}</span>
-                <span className="font-black text-gray-900">{tableNumber}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">{t.receipt.type}</span>
-              <span className="font-black text-gray-900">
-                {tableNumber ? t.receipt.dineIn : t.receipt.takeAway}
-              </span>
-            </div>
-          </div>
-
-          {/* Daftar item */}
-          <div className="px-5 py-4 flex flex-col gap-3 border-b border-dashed border-gray-200">
-            {cart.map((item) => {
-              const modifierSummary = (item.modifiers ?? [])
-                .map((m) => m.name)
-                .join(", ");
-              const addonSummary = item.addons
-                .filter((x) => x.qty > 0)
-                .map((x) => `${x.qty}x ${x.addon.name}`)
-                .join(", ");
-              const summary = [modifierSummary, addonSummary].filter(Boolean).join(", ");
-
-              return (
-                <div key={item.cartId} className="flex justify-between gap-3">
-                  <div className="flex-1">
-                    <p className="text-xs font-bold text-gray-900">
-                      {item.qty}x {item.product.name}
-                    </p>
-                    {summary && (
-                      <p className="text-[10px] text-gray-400">{summary}</p>
-                    )}
-                  </div>
-                  <p className="text-xs font-bold text-gray-900 shrink-0">
-                    {formatRp(item.totalPrice)}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* ── BREAKDOWN HARGA ──────────────────────────────────────────── */}
-          <div className="px-5 py-4 flex flex-col gap-1.5">
-
-            {/* Subtotal */}
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>{t.receipt.subTotal}</span>
-              <span>{formatRp(subTotal)}</span>
-            </div>
-
-            {/* Tax — hanya tampil jika ada */}
-            {hasTax && (
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>
-                  {kioskConfig?.tax?.name ?? "Pajak"}
-                  <span className="ml-1 text-[10px]">
-                    ({(taxRate * 100).toFixed(0)}%)
-                  </span>
-                </span>
-                <span>{formatRp(taxAmount)}</span>
-              </div>
-            )}
-
-            {/* Service charge — hanya tampil jika ada */}
-            {hasService && (
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>
-                  {kioskConfig?.service_charge?.name ?? "Service"}
-                  <span className="ml-1 text-[10px]">
-                    ({(serviceRate * 100).toFixed(0)}%)
-                  </span>
-                </span>
-                <span>{formatRp(serviceAmount)}</span>
-              </div>
-            )}
-
-            {/* Garis pemisah jika ada tax/service */}
-            {(hasTax || hasService) && (
-              <div className="border-t border-dashed border-gray-200 my-1" />
-            )}
-
-            {/* Total final */}
-            <div className="flex justify-between">
-              <span className="text-sm font-black text-gray-900">{t.receipt.total}</span>
-              <span className="text-sm font-black text-gray-900">{formatRp(totalFinal)}</span>
-            </div>
-          </div>
-
-          {/* Dekorasi bawah struk (efek gigi roda) */}
+          {/* Preview struk */}
           <div
-            className="h-4 w-full"
-            style={{
-              background: "radial-gradient(circle at 10px -2px, white 8px, #f3f4f6 8px) repeat-x bottom / 20px 16px",
-            }}
-          />
+            className="mx-auto border border-gray-200 rounded-xl shadow-sm bg-white overflow-hidden"
+            style={{ maxWidth: "300px" }}
+          >
+            <ReceiptContent
+              cart={cart}
+              tableNumber={tableNumber}
+              orderNumber={orderNumber}
+              orderId={orderId}
+              status={status}
+              member={member}
+              totalPoints={totalPoints}
+              kioskConfig={kioskConfig}
+              paymentMethod={paymentLabel}
+              cashierCode={cashierCode}
+            />
+          </div>
+
         </div>
 
-        {/* Nomor meja besar */}
-        {tableNumber && (
-          <div className="text-center mb-4">
-            <p className="text-xs text-gray-400">No.</p>
-            <p className="text-6xl font-black text-gray-900">{tableNumber}</p>
+        {/* ── FOOTER ─────────────────────────────────────────────────── */}
+        <div className="shrink-0 bg-white border-t border-gray-100">
+          <div className="px-5 pt-3 pb-2 flex gap-3">
+            <button
+              onClick={handlePrint}
+              className="flex-1 py-3.5 border border-gray-200 rounded-xl text-sm font-black text-gray-700 flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
+            >
+              <Printer size={15} /> {t.receipt.print}
+            </button>
+            <button
+              onClick={onDone}
+              className="flex-2 py-3.5 bg-[#C84C34] rounded-xl text-sm font-black text-white shadow-md active:scale-95 transition-transform"
+            >
+              {t.receipt.done}
+            </button>
           </div>
-        )}
 
-        {/* Info poin member */}
-        {member.type === "member" && totalPoints > 0 && (
-          <div className="mt-2 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-            <div className="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center shrink-0 text-lg">
-              ⭐
-            </div>
-            <div>
-              <p className="text-xs text-amber-700 font-bold">
-                Halo, {member.type === "member" ? member.name : ""}!
-              </p>
-              <p className="text-sm font-black text-gray-900">
-                +{totalPoints} poin telah ditambahkan
-              </p>
-              <p className="text-[10px] text-gray-400">Cek poin di aplikasi {storeName}</p>
-            </div>
+          <div className="flex items-center justify-between px-5 pb-3 gap-3">
+            <button
+              onClick={onResetAll}
+              className="text-[9px] font-black uppercase flex items-center gap-1 text-gray-500 shrink-0"
+            >
+              <RotateCcw size={11} /> {t.receipt.restartOrder}
+            </button>
+            <p className="text-[7.5px] text-gray-400 leading-tight text-right flex-1">
+              {t.receipt.halalNote}
+            </p>
+            <button className="text-[9px] font-black uppercase flex items-center gap-1 text-gray-500 shrink-0">
+              <Accessibility size={11} /> {t.receipt.accessibility}
+            </button>
           </div>
-        )}
+        </div>
 
       </div>
-
-      {/* ── FOOTER ────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 bg-white border-t border-gray-100">
-        <div className="px-5 pt-3 pb-2 flex gap-3">
-          <button
-            onClick={onPrint}
-            className="flex-1 py-3.5 border border-gray-200 rounded-xl text-sm font-black text-gray-700 flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
-          >
-            <Printer size={16} /> {t.receipt.print}
-          </button>
-          <button
-            onClick={onDone}
-            className="flex-2 py-3.5 bg-[#C84C34] rounded-xl text-sm font-black text-white shadow-md active:scale-95 transition-transform"
-          >
-            {t.receipt.done}
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between px-5 pb-3 gap-3">
-          <button
-            onClick={onResetAll}
-            className="text-[9px] font-black uppercase flex items-center gap-1 text-gray-500 shrink-0"
-          >
-            <RotateCcw size={11} /> {t.receipt.restartOrder}
-          </button>
-          <p className="text-[7.5px] text-gray-400 leading-tight text-right flex-1">
-            {t.receipt.halalNote}
-          </p>
-          <button className="text-[9px] font-black uppercase flex items-center gap-1 text-gray-500 shrink-0">
-            <Accessibility size={11} /> {t.receipt.accessibility}
-          </button>
-        </div>
-      </div>
-
-    </div>
+    </>
   );
 }

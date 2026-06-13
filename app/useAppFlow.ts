@@ -4,10 +4,14 @@ import { useState, useCallback, useEffect } from "react";
 import { CartItem, Product, MemberInfo } from "./screens/types";
 import {
   fetchConfig,
+  fetchCategories,
+  fetchProducts,
+  fetchFavorites,
   createOrder,
   payAtCashier,
   ApiConfig,
   ApiProduct,
+  ApiCategory,
 } from "@/lib/api";
 
 export type AppScreen =
@@ -36,7 +40,6 @@ function generateOrderNumber(): string {
   return `${hhmm}${rand}`;
 }
 
-// ─── HELPER: konversi ApiProduct → Product ────────────────────────────────────
 const LARAVEL_URL = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") ?? "http://localhost:8000";
 
 function normalizeImgUrl(url: string | null | undefined): string {
@@ -46,7 +49,7 @@ function normalizeImgUrl(url: string | null | undefined): string {
   return `${LARAVEL_URL}${path}`;
 }
 
-export function apiProductToProduct(p: ApiProduct): Product {
+export function toProduct(p: ApiProduct): Product {
   return {
     id: p.product_id,
     product_id: p.product_id,
@@ -59,7 +62,6 @@ export function apiProductToProduct(p: ApiProduct): Product {
   };
 }
 
-// ─── HOOK ─────────────────────────────────────────────────────────────────────
 export function useAppFlow() {
   const [screen, setScreen]                   = useState<AppScreen>("start");
   const [serviceType, setServiceType]         = useState<ServiceType>(null);
@@ -71,34 +73,55 @@ export function useAppFlow() {
   const [paymentMethod, setPaymentMethod]     = useState<PaymentMethod>(null);
   const [tableNumber, setTableNumber]         = useState<string | null>(null);
   const [orderNumber, setOrderNumber]         = useState(() => generateOrderNumber());
-
-  // ─── STATE BERHASIL DIGABUNGKAN ─────────────────────────────────────────────
-  const [savedCatId, setSavedCatId]           = useState<number | null>(null); // ← Tambahan dari kode kedua
   const [orderId, setOrderId]                 = useState<number | null>(null);
   const [kioskConfig, setKioskConfig]         = useState<ApiConfig | null>(null);
   const [orderError, setOrderError]           = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting]       = useState(false);
-  const [favorites, setFavorites]             = useState<Product[]>([]);
-  const [menuLoaded, setMenuLoaded]           = useState(false);
+  const [savedCatId, setSavedCatId]           = useState<number | null>(null);
 
-  // Fetch kiosk config sekali saat app load
+  // ─── CACHE DATA MENU DI SINI ──────────────────────────────────────────────
+  const [menuCategories, setMenuCategories]   = useState<ApiCategory[]>([]);
+  const [menuProducts, setMenuProducts]       = useState<ApiProduct[]>([]);
+  const [favorites, setFavorites]             = useState<Product[]>([]);
+  const [menuLoading, setMenuLoading]         = useState(true);
+  const [menuError, setMenuError]             = useState<string | null>(null);
+
+  // Fetch config + menu SEKALI saat app load — tidak pernah fetch ulang
   useEffect(() => {
     fetchConfig()
       .then(setKioskConfig)
       .catch((err) => console.error("Gagal fetch config:", err));
-  }, []);
 
-  // ─── COMPUTED ──────────────────────────────────────────────────────────────
-  const cartTotal = cart.reduce((s, item) => s + item.totalPrice, 0);
-  const cartQty   = cart.reduce((s, item) => s + item.qty, 0);
-  const isDineIn  = serviceType === "dine-in";
-  const isMember  = member.type === "member";
+    async function loadMenu() {
+      try {
+        setMenuLoading(true);
+        const [cats, prods, favs] = await Promise.all([
+          fetchCategories(),
+          fetchProducts(),
+          fetchFavorites(),
+        ]);
+        setMenuCategories(cats);
+        setMenuProducts(prods);
+        setFavorites(favs.map(toProduct));
+      } catch (err) {
+        console.error("Gagal load menu:", err);
+        setMenuError("Gagal memuat menu. Periksa koneksi ke server.");
+      } finally {
+        setMenuLoading(false);
+      }
+    }
 
+    loadMenu();
+  }, []); // ← [] berarti hanya jalan sekali saat app pertama dibuka
+
+  const cartTotal   = cart.reduce((s, item) => s + item.totalPrice, 0);
+  const cartQty     = cart.reduce((s, item) => s + item.qty, 0);
+  const isDineIn    = serviceType === "dine-in";
+  const isMember    = member.type === "member";
   const totalPoints = isMember
     ? cart.reduce((s, item) => s + (item.product.points ?? 0) * item.qty, 0)
     : 0;
 
-  // ─── NAVIGASI ──────────────────────────────────────────────────────────────
   const goToServiceType = useCallback(() => setScreen("service-type"), []);
 
   const chooseServiceType = useCallback((type: ServiceType) => {
@@ -138,10 +161,9 @@ export function useAppFlow() {
 
   const goToRecommendation = useCallback(() => setScreen("recommendation"), []);
   const goToCart           = useCallback(() => setScreen("cart"), []);
-  const goToPayment = useCallback(() => setScreen("payment"), []);
+  const goToPayment        = useCallback(() => setScreen("payment"), []);
   const goToInputTable     = useCallback(() => setScreen("input-table"), []);
 
-  // ─── SUBMIT ORDER KE BACKEND ───────────────────────────────────────────────
   const submitOrder = useCallback(async (
     method: "qris" | "cashier",
     tableNum: string | null
@@ -159,10 +181,8 @@ export function useAppFlow() {
         ...(tableNum && { table_number: tableNum }),
         items: cart.map((item) => ({
           product_id: item.product.product_id ?? item.product.id,
-          quantity: item.qty,
-          modifiers: (item.modifiers ?? []).map((m) => ({
-            modifier_id: m.modifier_id,
-          })),
+          quantity:   item.qty,
+          modifiers:  (item.modifiers ?? []).map((m) => ({ modifier_id: m.modifier_id })),
         })),
       });
 
@@ -225,14 +245,12 @@ export function useAppFlow() {
     setTableNumber(null);
     setOrderId(null);
     setOrderError(null);
-    setSavedCatId(null); // ← Turut di-reset saat kiosk kembali ke layar start
-    setMenuLoaded(false);
+    setSavedCatId(null);
     setOrderNumber(generateOrderNumber());
     setScreen("start");
   }, []);
 
   return {
-    // State
     screen,
     serviceType,
     member,
@@ -250,10 +268,16 @@ export function useAppFlow() {
     kioskConfig,
     orderError,
     isSubmitting,
-    favorites,
-    savedCatId,          // Bakal dipakai MenuPage untuk mengunci tab aktif
+    savedCatId,
+    setSavedCatId,
 
-    // Navigasi
+    // Data menu — sudah di-cache, tidak fetch ulang
+    menuCategories,
+    menuProducts,
+    favorites,
+    menuLoading,
+    menuError,
+
     goToServiceType,
     chooseServiceType,
     setMemberAndContinue,
@@ -271,15 +295,9 @@ export function useAppFlow() {
     goBackToCart: () => setScreen("cart"),
     goBackToMenu: () => setScreen("menu"),
 
-    // Keranjang
     updateCartQty,
     removeFromCart,
     resetAll,
-
-    // Setters
     setFavorites,
-    setSavedCatId,
-    menuLoaded,
-    setMenuLoaded,       // Diexport juga agar MenuPage bisa mengubah nilainya
   };
 }

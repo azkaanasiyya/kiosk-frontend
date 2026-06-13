@@ -1,7 +1,5 @@
 // lib/api.ts
-// ─── PUSAT SEMUA API CALL KE LARAVEL BACKEND ─────────────────────────────────
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL!;
+const BASE_URL  = process.env.NEXT_PUBLIC_API_URL!;
 const KIOSK_KEY = process.env.NEXT_PUBLIC_KIOSK_KEY!;
 
 const defaultHeaders = {
@@ -9,23 +7,19 @@ const defaultHeaders = {
   "X-Kiosk-Key": KIOSK_KEY,
 };
 
-// ─── HELPER FETCH ─────────────────────────────────────────────────────────────
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res  = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: { ...defaultHeaders, ...options?.headers },
   });
-
   const json = await res.json();
-
   if (!res.ok || !json.success) {
     throw new Error(json.message ?? `API Error ${res.status}`);
   }
-
   return json.data as T;
 }
 
-// ─── TIPE RESPONSE API ────────────────────────────────────────────────────────
+// ─── TIPE RESPONSE ───────────────────────────────────────────────────────────
 
 export type ApiModifierOption = {
   modifier_id: number;
@@ -50,7 +44,7 @@ export type ApiProduct = {
   img_url: string | null;
   earning_points: number;
   is_favorite: boolean;
-  modifiers: ApiModifierGroup[] | null;
+  modifiers: ApiModifierGroup[];
 };
 
 export type ApiCategory = {
@@ -67,22 +61,25 @@ export type ApiMember = {
   current_points: number;
 };
 
-export type ApiTax = {
+// Tax & service charge pakai type + value (bukan rate)
+export type ApiTaxConfig = {
   tax_id: number;
   name: string;
-  rate: number;
+  type: "percentage" | "nominal";
+  value: number; // 11.00 = 11%, bukan 0.11
 };
 
-export type ApiServiceCharge = {
+export type ApiServiceChargeConfig = {
   service_charge_id: number;
   name: string;
-  rate: number;
+  type: "percentage" | "nominal";
+  value: number; // 3.00 = 3%
 };
 
 export type ApiConfig = {
   outlet_id: number;
-  tax: ApiTax | null;
-  service_charge: ApiServiceCharge | null;
+  tax: ApiTaxConfig | null;
+  service_charge: ApiServiceChargeConfig | null;
 };
 
 export type ApiOrderItem = {
@@ -116,25 +113,23 @@ export type ApiPaymentStatus = {
   payment_status: "pending" | "success" | "failed" | "expired" | "no_payment";
 };
 
-export type ApiReceiptItem = {
-  name: string;
-  quantity: number;
-  price: number;
-  subtotal: number;
-  modifiers: { name: string; extra_price: number }[];
-  notes: string | null;
-};
-
 export type ApiReceipt = {
   order_id: number;
   order_type: string;
   table_number: string | null;
   status: string;
   member: ApiMember | null;
-  items: ApiReceiptItem[];
+  items: {
+    name: string;
+    quantity: number;
+    price: number;
+    subtotal: number;
+    modifiers: { name: string; extra_price: number }[];
+    notes: string | null;
+  }[];
   subtotal: number;
-  tax: { name: string; rate: number } | null;
-  service_charge: { name: string; rate: number } | null;
+  tax: { name: string; type: string; value: number } | null;
+  service_charge: { name: string; type: string; value: number } | null;
   total_final: number;
   payment: {
     payment_method: string;
@@ -147,12 +142,10 @@ export type ApiReceipt = {
 
 // ─── API FUNCTIONS ────────────────────────────────────────────────────────────
 
-/** Ambil konfigurasi outlet (tax, service charge) */
 export async function fetchConfig(): Promise<ApiConfig> {
   return apiFetch<ApiConfig>("/kiosk/config");
 }
 
-/** Lookup member by nomor HP */
 export async function lookupMember(phone: string): Promise<ApiMember> {
   return apiFetch<ApiMember>("/kiosk/member/lookup", {
     method: "POST",
@@ -160,22 +153,18 @@ export async function lookupMember(phone: string): Promise<ApiMember> {
   });
 }
 
-/** Ambil semua produk beserta modifier-nya */
 export async function fetchProducts(): Promise<ApiProduct[]> {
   return apiFetch<ApiProduct[]>("/kiosk/products");
 }
 
-/** Ambil semua kategori */
 export async function fetchCategories(): Promise<ApiCategory[]> {
   return apiFetch<ApiCategory[]>("/kiosk/categories");
 }
 
-/** Ambil produk favorit outlet */
 export async function fetchFavorites(): Promise<ApiProduct[]> {
   return apiFetch<ApiProduct[]>("/kiosk/favorites");
 }
 
-/** Buat order baru */
 export async function createOrder(payload: {
   order_type: "dine-in" | "takeaway";
   member_id?: number;
@@ -188,33 +177,20 @@ export async function createOrder(payload: {
   });
 }
 
-/** Buat pembayaran QRIS via Midtrans */
-export async function createQrisPayment(
-  orderId: number
-): Promise<ApiPaymentQrisResponse> {
-  return apiFetch<ApiPaymentQrisResponse>(
-    `/kiosk/orders/${orderId}/payment/qris`,
-    { method: "POST" }
-  );
-}
-
-/** Pilih bayar di kasir */
-export async function payAtCashier(orderId: number): Promise<void> {
-  await apiFetch(`/kiosk/orders/${orderId}/payment/kasir`, {
+export async function createQrisPayment(orderId: number): Promise<ApiPaymentQrisResponse> {
+  return apiFetch<ApiPaymentQrisResponse>(`/kiosk/orders/${orderId}/payment/qris`, {
     method: "POST",
   });
 }
 
-/** Polling status pembayaran */
-export async function fetchPaymentStatus(
-  orderId: number
-): Promise<ApiPaymentStatus> {
-  return apiFetch<ApiPaymentStatus>(
-    `/kiosk/orders/${orderId}/payment/status`
-  );
+export async function payAtCashier(orderId: number): Promise<void> {
+  await apiFetch(`/kiosk/orders/${orderId}/payment/kasir`, { method: "POST" });
 }
 
-/** Ambil data struk lengkap */
+export async function fetchPaymentStatus(orderId: number): Promise<ApiPaymentStatus> {
+  return apiFetch<ApiPaymentStatus>(`/kiosk/orders/${orderId}/payment/status`);
+}
+
 export async function fetchReceipt(orderId: number): Promise<ApiReceipt> {
   return apiFetch<ApiReceipt>(`/kiosk/orders/${orderId}/receipt`);
 }

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
@@ -5,7 +6,7 @@ import Image from "next/image";
 import { ShoppingCart, RotateCcw, Accessibility } from "lucide-react";
 import { CartItem, Product, formatRp } from "./types";
 import { useLanguage } from "@/context/LanguageContext";
-import { fetchCategories, fetchProducts, fetchFavorites, ApiProduct, ApiCategory } from "@/lib/api";
+import { ApiProduct, ApiCategory } from "@/lib/api";
 
 // ─── MAPPING ICON KATEGORI ────────────────────────────────────────────────────
 const CATEGORY_ICONS: Record<number, string> = {
@@ -188,6 +189,8 @@ function CategoryPage({
 }
 
 // ─── MENU PAGE (export utama) ─────────────────────────────────────────────────
+// Data menu (categories, products, favorites) sekarang di-fetch & di-cache
+// di useAppFlow, MenuPage hanya menerima via props — tidak fetch sendiri.
 export default function MenuPage({
   cart,
   onSelectProduct,
@@ -195,9 +198,11 @@ export default function MenuPage({
   onResetAll,
   savedCatId,
   onCatChange,
-  onFavoritesLoaded,
-  menuLoaded,
-  onMenuLoaded,
+  categories,
+  products,
+  favorites,
+  loading,
+  error,
 }: {
   cart: CartItem[];
   onSelectProduct: (p: Product) => void;
@@ -205,65 +210,35 @@ export default function MenuPage({
   onResetAll: () => void;
   savedCatId?: number | null;
   onCatChange?: (catId: number | null) => void;
-  onFavoritesLoaded?: (products: Product[]) => void;
-  menuLoaded?: boolean;
-  onMenuLoaded?: () => void;
+  categories: ApiCategory[];
+  products: ApiProduct[];
+  favorites: Product[];
+  loading: boolean;
+  error: string | null;
 }) {
   const { t } = useLanguage();
 
   const [activeCatId, setActiveCatId] = useState<number | null>(savedCatId ?? null);
-  const [categories, setCategories]   = useState<ApiCategory[]>([]);
-  const [allProducts, setAllProducts] = useState<ApiProduct[]>([]);
-  const [favorites, setFavorites]     = useState<Product[]>([]);
-  const [loadingMenu, setLoadingMenu] = useState(true);
-  const [errorMenu, setErrorMenu]     = useState<string | null>(null);
 
+  // Sync activeCatId setiap kali savedCatId dari parent berubah
   useEffect(() => {
-    // Jika menu sudah pernah di-fetch sebelumnya, skip fetch ulang
-    if (menuLoaded) {
-      setLoadingMenu(false);
-      return;
+    if (savedCatId !== undefined && savedCatId !== activeCatId) {
+      setActiveCatId(savedCatId);
     }
-
-    async function loadMenu() {
-      try {
-        setLoadingMenu(true);
-        setErrorMenu(null);
-        const [cats, prods, favs] = await Promise.all([
-          fetchCategories(),
-          fetchProducts(),
-          fetchFavorites(),
-        ]);
-        setCategories(cats);
-        setAllProducts(prods);
-
-        const favoriteProducts = favs.map(toProduct);
-        setFavorites(favoriteProducts);
-
-        onFavoritesLoaded?.(favoriteProducts);
-        onMenuLoaded?.(); // tandai sudah di-fetch
-      } catch (err) {
-        console.error("Gagal memuat menu:", err);
-        setErrorMenu("Gagal memuat menu. Periksa koneksi ke server.");
-      } finally {
-        setLoadingMenu(false);
-      }
-    }
-    loadMenu();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [savedCatId]);
 
   const activeCategory     = categories.find((c) => c.category_id === activeCatId) ?? null;
-  const productsInCategory = allProducts
+  const productsInCategory = products
     .filter((p) => p.category_id === activeCatId)
     .map(toProduct);
   const totalPrice = cart.reduce((s, item) => s + item.totalPrice, 0);
   const totalQty   = cart.reduce((s, item) => s + item.qty, 0);
 
-  if (errorMenu) {
+  if (error) {
     return (
       <div className="w-screen h-screen bg-white flex flex-col items-center justify-center gap-4 font-sans">
-        <p className="text-sm font-bold text-red-500">{errorMenu}</p>
+        <p className="text-sm font-bold text-red-500">{error}</p>
         <button
           onClick={() => window.location.reload()}
           className="px-6 py-3 bg-[#C84C34] text-white rounded-xl text-sm font-black"
@@ -285,7 +260,7 @@ export default function MenuPage({
               <Image src="/kopjay-logo.png" alt="kopi jaya" fill className="object-cover" />
             </div>
             <nav className="flex flex-col flex-1">
-              {loadingMenu
+              {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="w-full px-3 py-4 border-b border-gray-100 animate-pulse">
                       <div className="h-3 bg-gray-100 rounded w-3/4" />
@@ -321,14 +296,14 @@ export default function MenuPage({
           {activeCategory === null ? (
             <HomePage
               favorites={favorites}
-              loading={loadingMenu}
+              loading={loading}
               onSelectProduct={onSelectProduct}
             />
           ) : (
             <CategoryPage
               category={activeCategory}
               products={productsInCategory}
-              loading={loadingMenu}
+              loading={loading}
               onSelectProduct={onSelectProduct}
             />
           )}

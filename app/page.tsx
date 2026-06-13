@@ -20,7 +20,7 @@ import ReceiptPage          from "./screens/ReceiptPage";
 export default function Page() {
   const flow = useAppFlow();
 
-  // ── Overlay loading & error ──────────────────────────────────────────────
+  // ── Overlay loading & error submit order ─────────────────────────────────
   const submittingOverlay = flow.isSubmitting && (
     <div className="fixed inset-0 z-50 bg-white/80 flex flex-col items-center justify-center gap-4">
       <div className="w-10 h-10 border-4 border-[#C84C34] border-t-transparent rounded-full animate-spin" />
@@ -44,8 +44,8 @@ export default function Page() {
     </div>
   );
 
-  // ── MenuPage selalu di-render, hanya disembunyikan saat screen lain aktif ──
-  // Ini mencegah unmount/remount sehingga activeCatId dan data menu tetap terjaga
+  // ── MenuPage SELALU di-render, hanya disembunyikan saat screen lain aktif ──
+  // PENTING: ini mencegah unmount/remount agar activeCatId tidak reset
   const menuScreens = ["menu", "detail", "success"];
   const showMenu = menuScreens.includes(flow.screen);
 
@@ -56,18 +56,18 @@ export default function Page() {
         onSelectProduct={(p) => flow.goToDetail(p, "menu")}
         onViewCart={flow.goToRecommendation}
         onResetAll={flow.resetAll}
-        onFavoritesLoaded={flow.setFavorites}
         savedCatId={flow.savedCatId}
         onCatChange={flow.setSavedCatId}
-        menuLoaded={flow.menuLoaded}
-        onMenuLoaded={() => flow.setMenuLoaded(true)}
+        categories={flow.menuCategories}
+        products={flow.menuProducts}
+        favorites={flow.favorites}
+        loading={flow.menuLoading}
+        error={flow.menuError}
       />
     </div>
   );
 
-  // ── Screen-screen yang ditampilkan DI ATAS MenuPage ───────────────────────
-  // MenuPage tetap render di background, screen lain overlay di atasnya
-
+  // ── Screen tanpa MenuPage di background ───────────────────────────────────
   if (flow.screen === "start") {
     return <StartPage onStart={flow.goToServiceType} />;
   }
@@ -91,14 +91,14 @@ export default function Page() {
     );
   }
 
-  // ── Screens yang render bersama MenuPage (overlay) ────────────────────────
+  // ── Screen-screen yang dirender BERSAMA MenuPage (sebagai overlay) ────────
   return (
     <div className="relative w-screen h-screen overflow-hidden">
 
-      {/* MenuPage selalu ada di background */}
+      {/* MenuPage selalu ada di background, tidak pernah unmount */}
       {menuPage}
 
-      {/* Detail produk — overlay penuh di atas menu */}
+      {/* Detail produk */}
       {flow.screen === "detail" && flow.selectedProduct && (
         <div className="absolute inset-0 z-10">
           <ProductDetailPage
@@ -109,7 +109,7 @@ export default function Page() {
         </div>
       )}
 
-      {/* Success screen — overlay sebentar lalu kembali ke menu */}
+      {/* Success screen (auto-dismiss 1.5s → kembali ke menu) */}
       {flow.screen === "success" && (
         <div className="absolute inset-0 z-20">
           <SuccessScreen
@@ -119,7 +119,7 @@ export default function Page() {
         </div>
       )}
 
-      {/* Recommendation — sebelum ke keranjang */}
+      {/* Recommendation */}
       {flow.screen === "recommendation" && (
         <div className="absolute inset-0 z-30">
           <RecommendationPage
@@ -207,7 +207,7 @@ export default function Page() {
             member={flow.member}
             totalPoints={flow.totalPoints}
             kioskConfig={flow.kioskConfig}
-            onPrint={() => window.print()}
+            paymentMethod={flow.paymentMethod}
             onDone={flow.resetAll}
             onResetAll={flow.resetAll}
           />
