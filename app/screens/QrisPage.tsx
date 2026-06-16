@@ -6,7 +6,7 @@ import { RotateCcw, Accessibility, CheckCircle2, AlertCircle, Clock } from "luci
 import { CartItem, formatRp } from "./types";
 import { useLanguage } from "@/context/LanguageContext";
 import { createQrisPayment, fetchPaymentStatus } from "@/lib/api";
-import QRCode from "qrcode";
+// import QRCode from "qrcode";
 
 const POLLING_INTERVAL_MS = 3000;  // cek status setiap 3 detik
 const QRIS_EXPIRY_MINUTES = 30;    // default expiry QRIS Midtrans
@@ -27,13 +27,14 @@ export default function QRISPage({
   onResetAll: () => void;
 }) {
   const { t } = useLanguage();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [state, setState] = useState<"loading" | "ready" | "paid" | "expired" | "error">("loading");
   const [errorMsg, setErrorMsg]   = useState("");
   const [amount, setAmount]       = useState(0);
   const [timeLeft, setTimeLeft]   = useState(QRIS_EXPIRY_MINUTES * 60); // detik
   const [paymentId, setPaymentId] = useState<number | null>(null);
+  const [qrUrl, setQrUrl]       = useState("");
 
   const totalAmount = cart.reduce((s, item) => s + item.totalPrice, 0);
 
@@ -54,20 +55,27 @@ export default function QRISPage({
           setTimeLeft(remaining);
         }
 
-        // Render QR code ke canvas dari qr_string Midtrans
-        const qrData = payment.qr_string || payment.qr_url;
-        if (qrData && canvasRef.current) {
-          QRCode.toCanvas(canvasRef.current, qrData, {
-            width: 220,
-            margin: 2,
-            color: { dark: "#1a1a1a", light: "#ffffff" },
-          }).then(() => setState("ready"))
-            .catch(() => {
-              setErrorMsg("Gagal render QR code.");
-              setState("error");
-            });
+        // // Render QR code ke canvas dari qr_string Midtrans
+        // const qrData = payment.qr_string || payment.qr_url;
+        // if (qrData && canvasRef.current) {
+        //   QRCode.toCanvas(canvasRef.current, qrData, {
+        //     width: 220,
+        //     margin: 2,
+        //     color: { dark: "#1a1a1a", light: "#ffffff" },
+        //   }).then(() => setState("ready"))
+        //     .catch(() => {
+        //       setErrorMsg("Gagal render QR code.");
+        //       setState("error");
+        //     });
+        // } else {
+        //   setErrorMsg("QR string tidak tersedia dari server.");
+        //   setState("error");
+        // }
+        if (payment.payment_url) {
+          setQrUrl(payment.payment_url);
+          setState("ready");
         } else {
-          setErrorMsg("QR string tidak tersedia dari server.");
+          setErrorMsg("URL pembayaran tidak tersedia dari server.");
           setState("error");
         }
       })
@@ -172,10 +180,13 @@ export default function QRISPage({
           )}
 
           {/* Canvas QR — selalu ada di DOM, disembunyikan saat tidak ready */}
-          <canvas
+          {/* <canvas
             ref={canvasRef}
             className={`rounded-xl ${state === "ready" ? "block" : "hidden"}`}
-          />
+          /> */
+          state === "ready" && qrUrl && (
+            <img src={qrUrl} alt="QRIS" width="220" height="220" className="rounded-xl" />
+          )}
 
           {/* Paid state */}
           {state === "paid" && (
