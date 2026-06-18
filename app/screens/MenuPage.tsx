@@ -23,7 +23,7 @@ const CATEGORY_ICONS: Record<number, string> = {
   11: "/snack.png",
   12: "/add-on.png",
 };
-const DEFAULT_CATEGORY_ICON = "/icons/categories/default.png";
+const DEFAULT_CATEGORY_ICON = "/default.png";
 
 const LARAVEL_URL = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") ?? "http://localhost:8000";
 
@@ -354,3 +354,4 @@ export default function MenuPage({
     </div>
   );
 }
+
