@@ -99,10 +99,12 @@ export type ApiOrderResponse = {
 };
 
 export type ApiPaymentQrisResponse = {
+  // payment_url(payment_url: any): unknown;
   order_id: number;
   payment_id: number;
   qr_string: string;
   qr_url: string;
+  payment_url: string;
   amount: number;
   expired_at: string;
 };
