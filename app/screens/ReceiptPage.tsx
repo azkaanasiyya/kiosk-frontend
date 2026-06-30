@@ -385,6 +385,14 @@ export default function ReceiptPage({
         scale: 2,           // hasil lebih tajam
         backgroundColor: "#ffffff",
         useCORS: true,      // supaya logo (img) ikut ter-capture meski beda origin
+        // Eksplisit pakai ukuran elemen sebenarnya, bukan viewport penuh —
+        // tanpa ini html2canvas kadang ikut menangkap tinggi h-screen induknya
+        // (karena ReceiptPage dibungkus "absolute inset-0"), jadi PDF jadi
+        // ada spasi kosong panjang di bawah konten.
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
       });
       const imgData = canvas.toDataURL("image/png");
 
