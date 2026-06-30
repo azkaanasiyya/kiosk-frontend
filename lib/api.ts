@@ -90,7 +90,6 @@ export type ApiOrderItem = {
 
 export type ApiOrderResponse = {
   order_id: number;
-  pickup_code?: string;
   status: string;
   subtotal: number;
   tax: number;

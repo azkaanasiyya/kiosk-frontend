@@ -15,14 +15,14 @@ export type Addon = {
 
 export type Product = {
   id: number;
-  product_id?: number;        
+  product_id?: number;        // id asli dari database (sama dengan id setelah integrasi)
   name: string;
   price: number;
   img: string;
   subCatId: string;
-  addons?: Addon[];           
-  modifiers?: ApiModifierGroup[] | null; 
-  points?: number;            
+  addons?: Addon[];           // legacy — tidak dipakai setelah integrasi
+  modifiers?: ApiModifierGroup[] | null; // modifier dari backend
+  points?: number;            // earning_points dari backend
 };
 
 // Info member yang login
@@ -48,6 +48,7 @@ export type SelectedAddon = {
   qty: number;
 };
 
+// Modifier yang dipilih user (dari ApiModifierOption)
 export type SelectedModifier = {
   modifier_id: number;
   name: string;
