@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { RotateCcw, Accessibility, Printer } from "lucide-react";
+import { RotateCcw, Accessibility, Printer, Download } from "lucide-react";
 import { CartItem, MemberInfo, formatRp } from "./types";
 import { useLanguage } from "@/context/LanguageContext";
 import type { ApiConfig } from "@/lib/api";
@@ -31,6 +31,8 @@ function formatPct(value: number): string {
   return `${v % 1 === 0 ? v.toFixed(0) : v}%`;
 }
 
+// Generate kode kasir 5 digit (alfanumerik: huruf besar + angka)
+// Karakter yang mudah tertukar (O/0, I/1) sengaja dihilangkan agar mudah dibacakan ke kasir
 function generateCashierCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -41,6 +43,7 @@ function generateCashierCode(): string {
 }
 
 // ─── KOMPONEN ISI STRUK ───────────────────────────────────────────────────────
+// Dipisah agar bisa dipakai untuk preview & print
 function ReceiptContent({
   cart,
   tableNumber,
@@ -314,6 +317,7 @@ export default function ReceiptPage({
 }) {
   const { t } = useLanguage();
   const [cashierCode] = useState(() => generateCashierCode());
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Simpan pickup_code ke tabel orders begitu orderId & kode sudah tersedia
   useEffect(() => {
@@ -362,6 +366,43 @@ export default function ReceiptPage({
       </html>
     `);
     printWindow.document.close();
+  };
+
+  // ─── DOWNLOAD PDF (ukuran kertas thermal 80mm, tinggi otomatis) ───────────
+  const downloadReceiptPdf = async () => {
+    const element = document.getElementById("receipt-content");
+    if (!element || isDownloading) return;
+
+    setIsDownloading(true);
+    try {
+      // Import dinamis supaya tidak membengkakkan bundle awal kiosk
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import("jspdf"),
+        import("html2canvas"),
+      ]);
+
+      const canvas = await html2canvas(element, {
+        scale: 2,           // hasil lebih tajam
+        backgroundColor: "#ffffff",
+        useCORS: true,      // supaya logo (img) ikut ter-capture meski beda origin
+      });
+      const imgData = canvas.toDataURL("image/png");
+
+      const widthMm  = 80; // lebar kertas thermal 80mm
+      const heightMm = (canvas.height * widthMm) / canvas.width; // tinggi mengikuti konten asli
+
+      const pdf = new jsPDF({
+        unit: "mm",
+        format: [widthMm, heightMm],
+      });
+
+      pdf.addImage(imgData, "PNG", 0, 0, widthMm, heightMm);
+      pdf.save(`struk-${orderId ?? orderNumber}.pdf`);
+    } catch (err) {
+      console.error("Gagal membuat PDF struk:", err);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -429,6 +470,13 @@ export default function ReceiptPage({
               className="flex-1 py-3.5 border border-gray-200 rounded-xl text-sm font-black text-gray-700 flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
             >
               <Printer size={15} /> {t.receipt.print}
+            </button>
+            <button
+              onClick={downloadReceiptPdf}
+              disabled={isDownloading}
+              className="flex-1 py-3.5 border border-gray-200 rounded-xl text-sm font-black text-gray-700 flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={15} /> {isDownloading ? t.receipt.downloadingPdf : t.receipt.downloadPdf}
             </button>
             <button
               onClick={onDone}
