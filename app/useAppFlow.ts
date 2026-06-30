@@ -74,6 +74,7 @@ export function useAppFlow() {
   const [tableNumber, setTableNumber]         = useState<string | null>(null);
   const [orderNumber, setOrderNumber]         = useState(() => generateOrderNumber());
   const [orderId, setOrderId]                 = useState<number | null>(null);
+  const [pickupCode, setPickupCode]           = useState<string | null>(null);
   const [kioskConfig, setKioskConfig]         = useState<ApiConfig | null>(null);
   const [orderError, setOrderError]           = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting]       = useState(false);
@@ -187,6 +188,9 @@ export function useAppFlow() {
       });
 
       setOrderId(order.order_id);
+      if (order.pickup_code) {
+        setPickupCode(order.pickup_code);
+      }
 
       if (method === "cashier") {
         await payAtCashier(order.order_id);
@@ -244,6 +248,7 @@ export function useAppFlow() {
     setPaymentMethod(null);
     setTableNumber(null);
     setOrderId(null);
+    setPickupCode(null);
     setOrderError(null);
     setSavedCatId(null);
     setOrderNumber(generateOrderNumber());
@@ -265,6 +270,7 @@ export function useAppFlow() {
     tableNumber,
     orderNumber,
     orderId,
+    pickupCode,
     kioskConfig,
     orderError,
     isSubmitting,

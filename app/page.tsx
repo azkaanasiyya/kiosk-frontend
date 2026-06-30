@@ -204,6 +204,7 @@ export default function Page() {
             orderNumber={flow.orderNumber}
             orderId={flow.orderId}
             status={flow.screen === "receipt-paid" ? "paid" : "pending"}
+            pickupCode={flow.pickupCode}
             member={flow.member}
             totalPoints={flow.totalPoints}
             kioskConfig={flow.kioskConfig}
