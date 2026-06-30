@@ -5,6 +5,7 @@ import { RotateCcw, Accessibility, Printer } from "lucide-react";
 import { CartItem, MemberInfo, formatRp } from "./types";
 import { useLanguage } from "@/context/LanguageContext";
 import type { ApiConfig } from "@/lib/api";
+import { setPickupCode } from "@/lib/api";
 
 type ReceiptStatus = "paid" | "pending";
 
@@ -30,9 +31,15 @@ function formatPct(value: number): string {
   return `${v % 1 === 0 ? v.toFixed(0) : v}%`;
 }
 
-// Generate kode kasir 5 digit
+// Generate kode kasir 5 digit (alfanumerik: huruf besar + angka)
+// Karakter yang mudah tertukar (O/0, I/1) sengaja dihilangkan agar mudah dibacakan ke kasir
 function generateCashierCode(): string {
-  return Math.floor(10000 + Math.random() * 90000).toString();
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 5; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
 }
 
 // ─── KOMPONEN ISI STRUK ───────────────────────────────────────────────────────
@@ -310,6 +317,14 @@ export default function ReceiptPage({
 }) {
   const { t } = useLanguage();
   const [cashierCode] = useState(() => generateCashierCode());
+
+  // Simpan pickup_code ke tabel orders begitu orderId & kode sudah tersedia
+  useEffect(() => {
+    if (!orderId || !cashierCode) return;
+    setPickupCode(orderId, cashierCode).catch((err) => {
+      console.error("Gagal menyimpan pickup_code:", err);
+    });
+  }, [orderId, cashierCode]);
 
   // Terjemahkan paymentMethod ke label yang ditampilkan di struk
   const paymentLabel = paymentMethod === "qris" ? "QRIS"

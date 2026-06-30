@@ -61,19 +61,18 @@ export type ApiMember = {
   current_points: number;
 };
 
-// Tax & service charge pakai type + value (bukan rate)
 export type ApiTaxConfig = {
   tax_id: number;
   name: string;
   type: "percentage" | "nominal";
-  value: number; // 11.00 = 11%, bukan 0.11
+  value: number;
 };
 
 export type ApiServiceChargeConfig = {
   service_charge_id: number;
   name: string;
   type: "percentage" | "nominal";
-  value: number; // 3.00 = 3%
+  value: number; 
 };
 
 export type ApiConfig = {
@@ -99,7 +98,6 @@ export type ApiOrderResponse = {
 };
 
 export type ApiPaymentQrisResponse = {
-  // payment_url(payment_url: any): unknown;
   order_id: number;
   payment_id: number;
   qr_string: string;
@@ -187,6 +185,13 @@ export async function createQrisPayment(orderId: number): Promise<ApiPaymentQris
 
 export async function payAtCashier(orderId: number): Promise<void> {
   await apiFetch(`/kiosk/orders/${orderId}/payment/kasir`, { method: "POST" });
+}
+
+export async function setPickupCode(orderId: number, pickupCode: string): Promise<void> {
+  await apiFetch(`/kiosk/orders/${orderId}/pickup-code`, {
+    method: "PATCH",
+    body: JSON.stringify({ pickup_code: pickupCode }),
+  });
 }
 
 export async function fetchPaymentStatus(orderId: number): Promise<ApiPaymentStatus> {
