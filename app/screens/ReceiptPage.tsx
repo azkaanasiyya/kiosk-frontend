@@ -31,8 +31,6 @@ function formatPct(value: number): string {
   return `${v % 1 === 0 ? v.toFixed(0) : v}%`;
 }
 
-// Generate kode kasir 5 digit (alfanumerik: huruf besar + angka)
-// Karakter yang mudah tertukar (O/0, I/1) sengaja dihilangkan agar mudah dibacakan ke kasir
 function generateCashierCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -43,7 +41,6 @@ function generateCashierCode(): string {
 }
 
 // ─── KOMPONEN ISI STRUK ───────────────────────────────────────────────────────
-// Dipisah agar bisa dipakai untuk preview & print
 function ReceiptContent({
   cart,
   tableNumber,
